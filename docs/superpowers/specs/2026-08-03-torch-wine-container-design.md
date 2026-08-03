@@ -132,7 +132,9 @@ Privilege-drop idiom stays `runuser -u wine -- bash -c '...'` throughout — no 
 ### 5.1 `Dockerfile`
 
 - `FROM debian:bookworm-slim`
-- `ARG WINEBRANCH=stable`, `ARG WINEVERSION=<probe result>`, `ARG WINETRICKS_VERSION=<pinned tag>`
+- `ARG WINEBRANCH=stable`, `ARG WINEVERSION=11.0.0.0~bookworm-1`,
+  `ARG WINETRICKS_COMMIT=08304e81f9ac9a83c552a6bd78689040d174bf95`,
+  `ARG WINETRICKS_SHA256=954d17f56ae5f4d32eb083193a4a838c73ae5ff6b91765d93b0eab59cf2e7d29`
 - `ENV WINEPREFIX=/wineprefix` — single source of truth, no second value anywhere
 - `dpkg --add-architecture i386`; WineHQ keyring to `/etc/apt/keyrings/`; pinned install of
   `winehq-stable`, `wine-stable`, `wine-stable-amd64`, `wine-stable-i386` at `${WINEVERSION}`
