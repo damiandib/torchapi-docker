@@ -77,7 +77,8 @@ Unhandled Exception: System.MissingMethodException: Method not found:
 | Decision | Choice | Rationale |
 |---|---|---|
 | Wine runtime | Latest WineHQ **stable**, explicitly pinned | Asked-for update, but a stable branch and reproducible. Available for bookworm: `11.0.0.0`, `10.0.0.0`, `9.0.0.0` — a real fallback ladder |
-| Wine version value | Resolved by probe; `11.0.0.0~bookworm-1` first choice | Unknown whether new-wow64 Wine 11 can install .NET 4.8. The probe decides; the ladder is the fallback |
+| Wine version value | **`11.0.0.0~bookworm-1`** — probe-verified | See §7.1. Installs .NET 4.8 (`Release 0x80eb1`) despite new-wow64 |
+| winetricks version | Pinned to commit `08304e81f9ac9a83c552a6bd78689040d174bf95` | Reports `20260125-next`; the probe-validated content. Newest commit touching `src/winetricks` (2026-05-30), so identical to the master copy the probe used |
 | .NET runtime | Real .NET 4.8 via `winetricks dotnet48`, mono removed | Torch targets 4.8; wine-mono is not a validated substitute for this workload |
 | GUI / VNC | **Always on**, as today | User's explicit choice. Xvfb + x11vnc + openbox + winefile all retained |
 | Base image | `debian:bookworm-slim`, our own build | Rejected `scottyhardy/docker-wine`: unpinned latest, ships wine-mono, RDP not VNC, user not UID 1000 |
@@ -231,6 +232,37 @@ current build from `build.torchapi.com` (the predecessor's committed copy dates 
 
 ## 7. Verification
 
+### 7.1 Probe result — root cause proven, Wine pin resolved
+
+A clean `debian:bookworm-slim` build pinned to `winehq-stable=11.0.0.0~bookworm-1`, running the same
+verbs as the predecessor but **with an Xvfb display started before any Wine work**, produced:
+
+```
+HKEY_LOCAL_MACHINE\Software\Microsoft\NET Framework Setup\NDP\v4\Full
+    Release        REG_DWORD    0x80eb1        (528049)
+    Version        REG_SZ       4.8.03761
+    InstallPath    REG_SZ       C:\windows\Microsoft.NET\Framework64\v4.0.30319\
+
+mscorlib.dll   5436976 bytes   2019-03-28
+winetricks.log  ... vcrun2013, ucrtbase2019, vcrun2019, remove_mono ×2,
+                    winxp, dotnet40, dotnet48, d3dcompiler_47, sound=disabled, win10
+```
+
+Against the broken image's `Version 4.0.30319`, no `Release`, and a 2010-03-18 `mscorlib.dll`.
+
+This is the controlled experiment: **same verbs, same winetricks, newer Wine, one variable changed —
+a display that exists.** It confirms the missing build-time X server as the root cause and
+eliminates two competing hypotheses outright:
+
+- **New-wow64 is not a blocker.** winetricks emitted its `new wow64 mode` warning on Wine 11.0 and
+  `dotnet48` installed anyway.
+- **Wine version was never the cause.** .NET 4.8 installs on 11.0 stable, newer than either the
+  9.0.0.0 the Dockerfile pinned or the 10.17 Staging the image actually shipped.
+
+Total prefix build time ~285s. `vcrun2019` pulls in `ucrtbase2019` automatically.
+
+### 7.2 Ongoing verification
+
 No build system, no test suite, no linter — same as the predecessor. Verification is:
 
 1. `tools/probe-wine.sh 11.0.0.0~bookworm-1` → `PASS` before the pin is written
@@ -249,9 +281,18 @@ image builds under a different tag. Rollback is running the old compose file.
 
 ## 9. Open items
 
-- **Wine pin.** `11.0.0.0~bookworm-1` pending probe. Fallback ladder: `10.0.0.0~bookworm-1`, then
-  `9.0.0.0~bookworm-1`. Unresolved question: whether Wine 10/11's new-wow64 mode can install the
-  32-bit .NET 4.8 installer. Wine 9 stable with `wine-stable-i386` uses old-style WoW64 and is the
-  configuration `dotnet48` is best tested against, so it is the known-good floor.
-- **Pinned winetricks tag.** Set to whatever version the passing probe reports.
+**Resolved:**
+
+- ~~Wine pin~~ → `11.0.0.0~bookworm-1`, probe-verified (§7.1). Fallback ladder remains available in
+  the repo if a future Wine release regresses: `10.0.0.0~bookworm-1`, then `9.0.0.0~bookworm-1`.
+- ~~winetricks tag~~ → commit `08304e81f9ac9a83c552a6bd78689040d174bf95`, expected sha256
+  `954d17f56ae5f4d32eb083193a4a838c73ae5ff6b91765d93b0eab59cf2e7d29`. The build should assert this
+  checksum so an upstream change can't silently alter the prefix.
+
+**Remaining:**
+
 - **Private remote.** Not created. Awaiting explicit instruction.
+- **Torch version.** `start` fetches the current build from `build.torchapi.com`, so the .NET
+  requirement could change in a future Torch release. The build-time gate would catch a raised
+  floor (it asserts a minimum, and a newer Torch needing more would fail the smoke test rather than
+  crash cryptically at runtime).
