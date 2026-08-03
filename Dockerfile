@@ -53,3 +53,8 @@ RUN mkdir -p /tmp/.X11-unix && chmod 1777 /tmp/.X11-unix
 
 WORKDIR /app
 EXPOSE 5900 27016/udp
+
+# Last layer on purpose: entrypoint edits must not invalidate the winetricks layer above.
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

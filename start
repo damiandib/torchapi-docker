@@ -1,0 +1,20 @@
+#! /bin/sh
+set -eu
+
+if [ ! -f ./torch-server.zip ]; then
+  wget https://build.torchapi.com/job/Torch/job/master/lastSuccessfulBuild/artifact/bin/torch-server.zip
+fi
+
+if [ ! -d ./torch-server ]; then
+  unzip -q -d torch-server torch-server.zip
+fi
+
+# Load-bearing: everything in the container runs as the `wine` user (uid 1000) and Torch
+# cannot write files owned by root in the bind-mounted tree.
+if [ "$(stat -c '%u' torch-server)" != "1000" ]; then
+  echo "Setting owner of torch-server to UID 1000"
+  sudo chown -R 1000:1000 torch-server
+fi
+
+sudo docker compose up -d --build
+sudo docker compose logs -f
