@@ -55,6 +55,16 @@ No build system, linter, or unit tests. The two `tools/` scripts are the test su
   `tools/probe-wine.sh` before changing the pin.
 - **No secrets in layers.** VNC password comes from `VNC_PASSWORD` and is passed via `-passwdfile`,
   never `-passwd` (which shows up in `ps`).
+- **SE is installed by native Linux steamcmd, and Torch runs with `-noupdate`.** Do not "simplify"
+  this by letting Torch update itself. Torch downloads the *Windows* steamcmd and runs it under Wine,
+  where it never retrieves appinfo (`appcache/appinfo.vdf` is never written) and fails with
+  `Failed installing AppID 298740 (Missing configuration)`. Torch logs `SteamCMD update check
+  complete` anyway, then dies with `DirectoryNotFoundException` on
+  `DedicatedServer64\steam_api64.dll`. The entrypoint therefore runs
+  `/opt/steamcmd/steamcmd.sh +force_install_dir /app/torch-server +login anonymous
+  +@sSteamCmdForcePlatformType windows +app_update 298740` — the `ForcePlatformType windows` part is
+  essential, since Wine needs the Windows build — and refuses to launch Torch if
+  `DedicatedServer64/steam_api64.dll` is still absent afterwards.
 
 ## Layer ordering
 
@@ -69,8 +79,11 @@ No build system, linter, or unit tests. The two `tools/` scripts are the test su
   winetricks runs) then blocks forever, which looks exactly like a hang. Kill `winedbg` first.
 - **Port 27016 is UDP only.** TCP needs an explicit mapping.
 - **`INSTANCE_NAME` is consumed by nothing in this repo.** It exists for Torch's instance layout.
-- **Torch uses its own Wine-side steamcmd**, not any Linux package. Delete `./torch-server/steamcmd/`
-  to reset it.
+- **To force a clean SE reinstall**, delete `./torch-server/DedicatedServer64/` and restart; the
+  entrypoint installs it again with `validate`.
+- **Torch's Wine-side steamcmd lives at `./torch-server/steam/steamcmd/`**, not
+  `./torch-server/steamcmd/`. It is left over from Torch trying to update itself and is unused once
+  `-noupdate` is in effect.
 
 ## Style
 

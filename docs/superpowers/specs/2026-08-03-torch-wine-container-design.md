@@ -96,9 +96,10 @@ which is why none encounter this bug. There is nothing to inherit that we don't 
 
 ### Dropped from the old build
 
-- `steamcmd` apt package — unused. Torch downloads its own Windows `steamcmd.exe`
-  (`steamcdn-a.akamaihd.net/client/installer/steamcmd.zip`) and runs it under Wine. The Debian
-  package exists only to pull in `non-free` plus a debconf license prompt. Reversible.
+- ~~`steamcmd` apt package — unused.~~ **Reversed 2026-08-03 — see §10.** A native Linux steamcmd is
+  required. It is now installed from Valve's `steamcmd_linux.tar.gz` into `/opt/steamcmd` rather than
+  via the Debian package, which avoids the `non-free` repo and its debconf license prompt;
+  `lib32gcc-s1` provides the 32-bit loader.
 - `htop`, `net-tools` — debugging leftovers.
 - `software-properties-common`, `gnupg2` — installed and then removed within the same build.
 
@@ -293,7 +294,52 @@ image builds under a different tag. Rollback is running the old compose file.
 
 **Remaining:**
 
-- **Private remote.** Not created. Awaiting explicit instruction.
+- **Private remote.** Created: `github.com/damiandib/torchapi-docker`, branch `rebuild/wine11`.
+
+## 10. Amendment 2026-08-03 — SE install moved to native Linux steamcmd
+
+Found while first running the new image. The .NET fix worked: Torch got past CLR/NLog init into
+`Initializer.Initialize`, then failed differently:
+
+```
+System.IO.DirectoryNotFoundException: Could not find a part of the path
+'Z:\app\torch-server\DedicatedServer64\steam_api64.dll'
+   at Torch.Server.Initializer.Initialize(String[] args) Initializer.cs:line 91
+```
+
+Torch installs the SE dedicated server by unpacking a **Windows** steamcmd to
+`./torch-server/steam/steamcmd/` and running it under Wine. Evidence from that run:
+
+- `bootstrap_log.txt` — steamcmd is healthy: reports `Windows 10.0.19045.0`, selects the modern
+  `steam_cmd_win64` track, `Verification complete`. **The `win10` verb's guard works**; the
+  `steam_cmd_legacy_win32` 404 documented in §5.2 step 4 did not occur.
+- `content_log.txt` — `Failed installing AppID 298740 (Missing configuration)`.
+- `appcache/` holds only `httpcache` and `packageinfo.vdf` — **no `appinfo.vdf`**. steamcmd never
+  retrieved app metadata, so it has no configuration to install from.
+- Torch logs `SteamCMD update check complete` regardless and proceeds to the failing copy. Torch does
+  not check whether its own update step succeeded, which is why the symptom is a confusing
+  `DirectoryNotFoundException` rather than a download error.
+
+Native Linux steamcmd with `+@sSteamCmdForcePlatformType windows` downloads app 298740 successfully —
+verified against `steamcmd/steamcmd:debian-12` before the change was written.
+
+**Decision.** The entrypoint installs and updates SE itself with native Linux steamcmd, asserts
+`DedicatedServer64/steam_api64.dll` exists, and launches Torch with `-noupdate` (confirmed present in
+the binary: *"noupdate: Disable automatically downloading game and plugin updates"*). Relying on
+Torch's updater would mean depending on a step that reports success while doing nothing — the exact
+pattern this rebuild exists to eliminate.
+
+New env contract: `TORCH_ARGS` (default `-noupdate`), `SE_APPID` (`298740`), `SE_UPDATE_ON_BOOT`
+(`1`), `STEAMCMD` (`/opt/steamcmd/steamcmd.sh`).
+
+**Two errors of mine this corrects:**
+
+1. Dropping the `steamcmd` package (§3) was wrong. The predecessor's note that Torch uses its own
+   Wine-side steamcmd was accurate about the mechanism but the conclusion — that a Linux steamcmd is
+   therefore pointless — did not follow.
+2. I initially read `SteamKit2.dll` plus the `steam/`+`steamapps/` directories as evidence that this
+   Torch build downloads SE in-process via SteamKit2. It does not; it shells out to `steamcmd.exe`,
+   one directory deeper than where I first looked.
 - **Torch version.** `start` fetches the current build from `build.torchapi.com`, so the .NET
   requirement could change in a future Torch release. The build-time gate would catch a raised
   floor (it asserts a minimum, and a newer Torch needing more would fail the smoke test rather than

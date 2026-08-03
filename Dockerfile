@@ -28,9 +28,19 @@ RUN dpkg --add-architecture i386 && \
       wine-${WINEBRANCH}-i386=${WINEVERSION} && \
     apt-get install -y -qq --no-install-recommends \
       xvfb x11-utils x11vnc openbox winbind cabextract procps unzip \
-      libfaudio0 libfaudio0:i386 && \
+      libfaudio0 libfaudio0:i386 \
+      lib32gcc-s1 && \
     rm -rf /var/lib/apt/lists/* && \
     echo "pinned Wine: ${WINEVERSION}" && wine --version
+
+# Native Linux steamcmd, used to install the SE dedicated server (app 298740) with
+# @sSteamCmdForcePlatformType windows. Torch's own updater runs the WINDOWS steamcmd under Wine,
+# which fails with "Failed installing AppID 298740 (Missing configuration)" -- it never retrieves
+# appinfo, then reports success anyway, leaving Torch to die on the absent DedicatedServer64/.
+# So we install SE ourselves and run Torch with -noupdate. lib32gcc-s1 is steamcmd's 32-bit loader.
+RUN mkdir -p /opt/steamcmd && \
+    wget -qO- https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz \
+      | tar -xz -C /opt/steamcmd
 
 # Pinned winetricks with a checksum, so upstream cannot silently change the prefix.
 RUN wget -qO /usr/local/bin/winetricks \
@@ -41,7 +51,7 @@ RUN wget -qO /usr/local/bin/winetricks \
 # uid 1000 is load-bearing: docker-compose bind-mounts ./torch-server here and Torch must write to it.
 RUN adduser --disabled-password --gecos "" --uid 1000 wine && \
     mkdir -p /wineprefix /app /scripts && \
-    chown -R wine:wine /wineprefix /app
+    chown -R wine:wine /wineprefix /app /opt/steamcmd
 
 # The expensive layer. Everything below it should stay below it.
 COPY winetricks.sh /scripts/winetricks.sh

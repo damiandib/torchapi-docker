@@ -12,6 +12,8 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 DOCKER=${DOCKER:-docker}
 COMPOSE="${DOCKER} compose"
+# The first boot installs the SE dedicated server (several GB), so raise TIMEOUT for it:
+#   TIMEOUT=3600 tools/smoke-test.sh
 TIMEOUT=${TIMEOUT:-300}
 STABLE_FOR=${STABLE_FOR:-60}
 
@@ -52,6 +54,11 @@ while [ "$SECONDS" -lt "$deadline" ]; do
   if $COMPOSE logs 2>&1 | grep -q "_XSERVTransmkdir: ERROR"; then
     echo "FAIL: /tmp/.X11-unix is missing from the image"
     report
+    exit 1
+  fi
+  if $COMPOSE logs 2>&1 | grep -q "\[entrypoint\] FATAL"; then
+    echo "FAIL: the entrypoint refused to start Torch"
+    $COMPOSE logs 2>&1 | grep "\[entrypoint\] FATAL"
     exit 1
   fi
   if $DOCKER exec torchapi pgrep -f Torch.Server.exe >/dev/null 2>&1; then
