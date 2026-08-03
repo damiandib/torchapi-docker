@@ -14,12 +14,22 @@ Rebuild of [`torchapi-wine9`](https://github.com/stubkan/torchapi-wine9), whose 
 ./stop           # compose stop && down
 ```
 
-Then connect a VNC client to `host:5900`. Set `VNC_PASSWORD` in `docker-compose.yml` or the
-environment; if unset, a random password is generated per container and printed to the log:
+Then connect a VNC client to `host:5900`. Set `VNC_PASSWORD` in the environment, in a `.env` file
+next to `docker-compose.yml`, or directly in the compose file:
+
+```bash
+echo 'VNC_PASSWORD=hunter2' > .env
+```
+
+If unset, a random password is generated per container and printed to the log:
 
 ```bash
 sudo docker compose logs | grep "generated for this container"
 ```
+
+**VNC auth uses only the first 8 characters** of the password — a DES limitation of the protocol, not
+this image. Longer values are accepted and silently truncated, so use 8 characters to avoid
+confusion.
 
 ## Requirements
 

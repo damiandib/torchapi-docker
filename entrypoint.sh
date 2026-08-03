@@ -32,14 +32,31 @@ mkdir -p /tmp/.X11-unix && chmod 1777 /tmp/.X11-unix
 install -d -o wine -g wine -m 0755 /run/vnc /app/logs
 install -o wine -g wine -m 0644 /dev/null /app/logs/x11vnc.log
 
-# VNC password: from the environment, or generated per container. Never baked into a layer,
-# and passed to x11vnc via -passwdfile so it does not appear in `ps` output.
+# VNC password: from the environment, or generated per container. Never baked into a layer, and
+# handed to x11vnc as a file so it does not appear in `ps` output.
+#
+# The file MUST be consumed with -rfbauth, not -passwdfile: -storepasswd writes the obfuscated
+# VNC format that -rfbauth reads, whereas -passwdfile expects plain text and would compare the
+# raw obfuscated bytes against the client's password -- every login then fails.
+#
+# VNC's DES-based auth uses only the FIRST 8 CHARACTERS of a password. Longer values are accepted
+# but silently truncated, so the generated one is 8 characters to avoid surprises.
 if [ -z "${VNC_PASSWORD:-}" ]; then
-  VNC_PASSWORD=$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 16)
+  VNC_PASSWORD=$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 8)
   log "VNC_PASSWORD not set; generated for this container: ${VNC_PASSWORD}"
-  log "set VNC_PASSWORD in docker-compose.yml to keep it stable across restarts"
+  log "set VNC_PASSWORD in docker-compose.yml or .env to keep it stable across restarts"
+elif [ "${#VNC_PASSWORD}" -gt 8 ]; then
+  log "NOTE: VNC auth uses only the first 8 characters of VNC_PASSWORD (yours is ${#VNC_PASSWORD})"
 fi
-runuser -u wine -- x11vnc -storepasswd "$VNC_PASSWORD" /run/vnc/passwd >/dev/null 2>&1
+
+if ! runuser -u wine -- x11vnc -storepasswd "$VNC_PASSWORD" /run/vnc/passwd >/dev/null 2>&1; then
+  log "FATAL: x11vnc -storepasswd failed to write /run/vnc/passwd"
+  exit 1
+fi
+if [ ! -s /run/vnc/passwd ]; then
+  log "FATAL: /run/vnc/passwd is empty after -storepasswd"
+  exit 1
+fi
 chmod 0600 /run/vnc/passwd
 chown wine:wine /run/vnc/passwd
 unset VNC_PASSWORD
@@ -107,7 +124,7 @@ log "display ready"
 
 log "starting x11vnc on port ${VNC_PORT}"
 runuser -u wine -- bash -c "x11vnc -display ${DISPLAY} -forever -shared -rfbport ${VNC_PORT} \
-  -passwdfile /run/vnc/passwd -o /app/logs/x11vnc.log -bg"
+  -rfbauth /run/vnc/passwd -o /app/logs/x11vnc.log -bg"
 
 # Torch's GUI expects a window manager.
 log "starting openbox"

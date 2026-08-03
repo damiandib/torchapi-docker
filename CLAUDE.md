@@ -53,8 +53,12 @@ No build system, linter, or unit tests. The two `tools/` scripts are the test su
   predecessor curled winetricks from `master`, and its image was built with `--build-arg` values that
   disagreed with its own Dockerfile — so its Wine version was never actually controlled. Use
   `tools/probe-wine.sh` before changing the pin.
-- **No secrets in layers.** VNC password comes from `VNC_PASSWORD` and is passed via `-passwdfile`,
-  never `-passwd` (which shows up in `ps`).
+- **No secrets in layers.** VNC password comes from `VNC_PASSWORD`, is written with
+  `x11vnc -storepasswd`, and is consumed with **`-rfbauth`** — never `-passwd`, which shows up in
+  `ps`. Do not swap `-rfbauth` for `-passwdfile`: `-storepasswd` writes the obfuscated VNC format
+  that `-rfbauth` reads, while `-passwdfile` expects plain text and would compare the raw obfuscated
+  bytes to the client's password, failing every login with "password check failed". Also note VNC's
+  DES auth uses only the first 8 characters of a password.
 - **SE is installed by native Linux steamcmd, and Torch runs with `-noupdate`.** Do not "simplify"
   this by letting Torch update itself. Torch downloads the *Windows* steamcmd and runs it under Wine,
   where it never retrieves appinfo (`appcache/appinfo.vdf` is never written) and fails with
