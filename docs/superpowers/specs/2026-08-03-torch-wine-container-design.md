@@ -64,6 +64,10 @@ Unhandled Exception: System.MissingMethodException: Method not found:
   `stable` / `9.0.0.0~bookworm-1`. Nothing in the repo passes those args — `start` runs a plain
   `docker-compose up -d`. Wine version was therefore never actually controlled.
 - `winetricks` is curled from `master` at build time, so no two builds are guaranteed identical.
+- **`winetricks.sh` line 8 (`vcrun2019`) can never have succeeded.** winetricks rejects it with
+  `error: vcrun2019 conflicts with vcrun2017, which is already installed`, because `vcrun2015`,
+  `vcrun2017` and `vcrun2019` are one VC++ 14.x family. Confirmed by direct observation in a clean
+  Wine 11 build. Another instance of the same silent-failure class: the verb dies, the build passes.
 - Torch parked in WineDbg after crashing holds the prefix open, and winetricks' `wineserver -w`
   then blocks forever ("This will hang until all wine processes in prefix terminate"). This makes
   any in-container repair attempt appear to hang.
@@ -150,8 +154,13 @@ set -euo pipefail
    the root cause.**
 2. `WINEDLLOVERRIDES="mscoree=d" wineboot --init /nogui` to suppress the wine-mono prompt;
    `wineserver -w`.
-3. Verbs: `corefonts`, `vcrun2013`, `vcrun2017`, `vcrun2019`, `dotnet48`, `d3dcompiler_47`,
+3. Verbs: `corefonts`, `vcrun2013`, `vcrun2019`, `dotnet48`, `d3dcompiler_47`,
    `sound=disabled`, `d3d9=native`, WPF `DisableHWAcceleration`.
+   **`vcrun2017` must not be installed alongside `vcrun2019`.** `vcrun2015`, `vcrun2017` and
+   `vcrun2019` are the same VC++ 14.x redist family and winetricks refuses to stack them
+   (`error: vcrun2019 conflicts with vcrun2017, which is already installed`). `vcrun2019` is the
+   superset; `vcrun2013` is a separate family (VC++ 12.0) and installs alongside it fine.
+   Each verb is invoked as its own `winetricks` call, so a failure is attributable to one verb.
 4. `winetricks win10` **last**. Non-negotiable and must stay last: `load_dotnet48()` calls
    `w_set_winver win7` and never restores it. Steam dropped Windows 7/8/8.1 on 2024-01-01, so a
    win7 prefix makes `steamcmd.exe` select the legacy track and fetch
