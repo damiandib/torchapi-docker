@@ -12,6 +12,10 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 DOCKER=${DOCKER:-docker}
 COMPOSE="${DOCKER} compose"
+# Read logs by container name: `compose logs` has been observed returning nothing on hosts where
+# `docker logs torchapi` works, and a test reading an empty log passes for the wrong reason.
+CONTAINER=${CONTAINER:-torchapi}
+logs() { $DOCKER logs "$CONTAINER" 2>&1; }
 # The first boot installs the SE dedicated server (several GB), so raise TIMEOUT for it:
 #   TIMEOUT=3600 tools/smoke-test.sh
 TIMEOUT=${TIMEOUT:-300}
@@ -41,27 +45,31 @@ fi
 echo "=== boot ==="
 $COMPOSE up -d
 
-report() { echo "--- last 60 log lines ---"; $COMPOSE logs --tail 60 2>&1 || true; }
+report() { echo "--- last 60 log lines ---"; $DOCKER logs --tail 60 "$CONTAINER" 2>&1 || true; }
+
+# Torch emits this once it has loaded Torch.cfg and finished applying its patches -- i.e. it is
+# genuinely initialised, not merely running. Verified against a working server.
+TORCH_READY='PatchManager: Patching done'
 
 deadline=$(( SECONDS + TIMEOUT ))
 started=0
 while [ "$SECONDS" -lt "$deadline" ]; do
-  if $COMPOSE logs 2>&1 | grep -qE "MissingMethodException|Unhandled Exception|WineDbg attached"; then
+  if logs | grep -qE "MissingMethodException|Unhandled Exception|WineDbg attached"; then
     echo "FAIL: Torch threw an unhandled exception"
     report
     exit 1
   fi
-  if $COMPOSE logs 2>&1 | grep -q "_XSERVTransmkdir: ERROR"; then
+  if logs | grep -q "_XSERVTransmkdir: ERROR"; then
     echo "FAIL: /tmp/.X11-unix is missing from the image"
     report
     exit 1
   fi
-  if $COMPOSE logs 2>&1 | grep -q "\[entrypoint\] FATAL"; then
+  if logs | grep -q "\[entrypoint\] FATAL"; then
     echo "FAIL: the entrypoint refused to start Torch"
-    $COMPOSE logs 2>&1 | grep "\[entrypoint\] FATAL"
+    logs | grep "\[entrypoint\] FATAL"
     exit 1
   fi
-  if $DOCKER exec torchapi pgrep -f Torch.Server.exe >/dev/null 2>&1; then
+  if logs | grep -q "$TORCH_READY"; then
     started=1
     break
   fi
@@ -69,20 +77,24 @@ while [ "$SECONDS" -lt "$deadline" ]; do
 done
 
 if [ "$started" -ne 1 ]; then
-  echo "FAIL: Torch.Server.exe never appeared within ${TIMEOUT}s"
+  echo "FAIL: Torch never reached '${TORCH_READY}' within ${TIMEOUT}s"
+  if $DOCKER exec "$CONTAINER" pgrep -f Torch.Server.exe >/dev/null 2>&1; then
+    echo "       (Torch.Server.exe is running but never finished initialising)"
+  fi
   report
   exit 1
 fi
+echo "Torch initialised: '${TORCH_READY}' seen"
 
 echo "=== Torch is running; confirming it stays up for ${STABLE_FOR}s ==="
 sleep "$STABLE_FOR"
 
-if $COMPOSE logs 2>&1 | grep -qE "MissingMethodException|Unhandled Exception|WineDbg attached"; then
+if logs | grep -qE "MissingMethodException|Unhandled Exception|WineDbg attached"; then
   echo "FAIL: Torch crashed during the stability window"
   report
   exit 1
 fi
-if ! $DOCKER exec torchapi pgrep -f Torch.Server.exe >/dev/null 2>&1; then
+if ! $DOCKER exec "$CONTAINER" pgrep -f Torch.Server.exe >/dev/null 2>&1; then
   echo "FAIL: Torch.Server.exe exited during the stability window"
   report
   exit 1
