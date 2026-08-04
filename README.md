@@ -95,9 +95,13 @@ sudo docker compose up -d --build
 
 ## Notes
 
-- **The server is single-shot.** Restarting Torch from inside its own GUI kills the window manager
-  and does not cleanly recover. Restart the container instead. Edit server and instance configs while
-  stopped, not live.
+- **Plugin-scheduled restarts work in-process.** A scheduled restart (e.g. from an admin plugin)
+  unloads and reloads the torch session with an autosave, leaving the container running — verified in
+  production across a 12h+ uptime with `RestartCount: 0`. `SE_UPDATE_ON_BOOT` therefore does not run
+  on those; it only runs when the container itself boots.
+- **Restarting Torch from inside its own GUI is a different case** and is reported not to recover
+  cleanly — the window manager goes with it. Restart the container for that. Edit server and instance
+  configs while stopped, not live.
 - **Torch's own updater is bypassed.** Left to itself, Torch unpacks a Windows steamcmd into
   `./torch-server/steam/steamcmd/` and runs it under Wine, where it cannot install app 298740. We use
   native Linux steamcmd instead and pass `-noupdate` — see "SE install" above. To force a clean SE

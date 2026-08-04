@@ -77,8 +77,13 @@ No build system, linter, or unit tests. The two `tools/` scripts are the test su
 
 ## Gotchas
 
-- **The server is single-shot.** Restarting Torch from its own GUI kills the window manager and does
-  not recover. Restart the container.
+- **Plugin-scheduled restarts reload the session in-process and do not touch the container.**
+  Verified in production: a `Good.bot` scheduled restart unloaded the torch session, autosaved
+  successfully, and reloaded, while the container stayed up with `RestartCount: 0` across a 12h+
+  uptime. So `SE_UPDATE_ON_BOOT` does not re-run on these, and there is no container churn.
+- **Restarting Torch from its own GUI is still a separate matter** — the predecessor's README reports
+  it kills the window manager without recovering, and that has not been retested here. Restart the
+  container for that case.
 - **A crashed Torch parks in WineDbg and holds the prefix open.** Any `wineserver -w` (which
   winetricks runs) then blocks forever, which looks exactly like a hang. Kill `winedbg` first.
 - **Port 27016 is UDP only.** TCP needs an explicit mapping.
