@@ -1,0 +1,23 @@
+# No `version:` key -- obsolete in Compose v2 and warns if present.
+services:
+  torch:
+    build:
+      context: .
+      args:
+        WINEVERSION: 11.0.0.0~bookworm-1
+    image: torchapi:wine11
+    container_name: torchapi
+    restart: unless-stopped
+    volumes:
+      - ./torch-server:/app/torch-server
+    ports:
+      - "27016:27016/udp"
+      # Torch plugins or a Remote API needing TCP require this mapping explicitly:
+      # - "27016:27016/tcp"
+      - "5900:5900"
+    environment:
+      - WINEDEBUG=-all
+      # Consumed by Torch/instance layout under /app/torch-server, not by this repo's scripts.
+      - INSTANCE_NAME=TORCHAPI
+      # Unset means a random password is generated and printed to the container log on boot.
+      - VNC_PASSWORD=${VNC_PASSWORD:-}
