@@ -94,8 +94,12 @@ if [ ! -f "$SE_SENTINEL" ]; then
     exit 1
   fi
 elif [ "$SE_UPDATE_ON_BOOT" = "1" ]; then
+  # validate, not a plain app_update: steamcmd's own depot cache (~/Steam) is not bind-mounted
+  # and is empty on every boot, while the game's own appmanifest already claims fully-installed.
+  # A cold plain update can't reconcile that and fails with "state 0x6 after update job", so the
+  # update silently never applies. validate forces a full content-hash reconciliation instead.
   log "updating SE dedicated server (app ${SE_APPID}); set SE_UPDATE_ON_BOOT=0 to skip"
-  if ! install_se; then
+  if ! install_se validate; then
     log "WARNING: steamcmd update failed; continuing with the copy already on disk"
   fi
 fi
