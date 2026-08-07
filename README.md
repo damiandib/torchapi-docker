@@ -71,6 +71,13 @@ the broken path. First boot downloads several GB; later boots run `app_update` u
 
 If you set `TORCH_ARGS` to something without `-noupdate`, Torch will attempt its own update again.
 
+**Every update deletes `steamapps/appmanifest_298740.acf` first.** steamcmd's own state (`~/Steam`)
+isn't persisted across boots, so an update against an existing appmanifest always reconfigures
+against the manifest ID already on record — and once a newer build supersedes that ID, Valve denies
+re-issuing its manifest request code every single time (not a transient CDN blip: retries alone don't
+fix it). Deleting just the manifest file first forces a fresh redetect, the same path the first
+install already uses.
+
 Ports: `27016/udp` (game) and `5900/tcp` (VNC). Port 27016 is UDP **only** — plugins or a Remote API
 needing TCP require uncommenting that mapping in `docker-compose.yml`.
 
