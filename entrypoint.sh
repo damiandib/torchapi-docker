@@ -75,12 +75,22 @@ fi
 
 # ---- Space Engineers dedicated server: install/update with NATIVE Linux steamcmd ----
 # @sSteamCmdForcePlatformType windows makes Linux steamcmd fetch the Windows build of the app,
-# which is what Wine has to run.
+# which is what Wine has to run. Only pass it on the FIRST install: content_log.txt shows every
+# later update job re-asserting it forces a "Reconfiguring" step that re-requests the manifest
+# already recorded as installed for depot 298741 -- and that specific (superseded) manifest gets
+# a hard, consistent "Access Denied" fetching its manifest request code. Depots are already
+# pinned to the windows build once installed, so updates don't need to re-force the platform.
 install_se() {
+  local force_platform="$1"
+  shift
+  local platform_args=()
+  if [ "$force_platform" = "1" ]; then
+    platform_args=(+@sSteamCmdForcePlatformType windows)
+  fi
   runuser -u wine -- "$STEAMCMD" \
     +force_install_dir "$TORCH_DIR" \
     +login anonymous \
-    +@sSteamCmdForcePlatformType windows \
+    "${platform_args[@]}" \
     +app_update "$SE_APPID" "$@" \
     +quit
 }
@@ -89,20 +99,17 @@ SE_SENTINEL="${TORCH_DIR}/DedicatedServer64/steam_api64.dll"
 
 if [ ! -f "$SE_SENTINEL" ]; then
   log "SE dedicated server absent; installing app ${SE_APPID} (first run downloads several GB)"
-  if ! install_se validate; then
+  if ! install_se 1 validate; then
     log "FATAL: steamcmd could not install app ${SE_APPID}"
     exit 1
   fi
 elif [ "$SE_UPDATE_ON_BOOT" = "1" ]; then
-  # steamcmd's anonymous login intermittently gets 'Access Denied' fetching the manifest request
-  # code for depot 298741 (content_log.txt: "Failed to get manifest request code, 'Access Denied'"
-  # / "Failed downloading 1 manifests (No connection)") even though the same anonymous session
-  # fetches that same depot fine on a fresh install. This is Steam CDN flakiness, not a bad
-  # command line, and it clears up on retry -- so retry a few times before giving up.
+  # Kept as a safety net for genuinely transient Steam CDN errors; does not mask the
+  # force-platform reconfigure denial above, since that no longer happens on this path.
   log "updating SE dedicated server (app ${SE_APPID}); set SE_UPDATE_ON_BOOT=0 to skip"
   SE_UPDATE_OK=0
   for attempt in 1 2 3; do
-    if install_se validate; then
+    if install_se 0 validate; then
       SE_UPDATE_OK=1
       break
     fi
