@@ -22,6 +22,11 @@ CHOWN_TORCH_DIR=${CHOWN_TORCH_DIR:-1}
 SE_APPID=${SE_APPID:-298740}
 SE_UPDATE_ON_BOOT=${SE_UPDATE_ON_BOOT:-1}
 STEAMCMD=${STEAMCMD:-/opt/steamcmd/steamcmd.sh}
+# Torch has a long-standing, unfixed upstream bug where a Stop/restart from its own GUI can hang
+# forever instead of reloading a session (https://github.com/TorchAPI/Torch/issues/313). No thread
+# crashes or spins -- the process just parks. The only known recovery is killing it, so this is how
+# long to wait after "Torch: Stopping server." for "Registering command" to reappear before we do.
+STOP_HANG_TIMEOUT=${STOP_HANG_TIMEOUT:-90}
 
 log() { echo "[entrypoint] $*"; }
 
@@ -158,8 +163,59 @@ log "starting Torch: ${TORCH_EXE} ${TORCH_ARGS}"
 runuser -u wine -- bash -c "cd ${TORCH_DIR} && DISPLAY=${DISPLAY} exec wine '${TORCH_EXE}' ${TORCH_ARGS}" &
 TORCH_PID=$!
 
+# See STOP_HANG_TIMEOUT above. Watches the newest Torch-*.log for a stop that never reloads and
+# force-kills the whole Torch process tree so `restart: unless-stopped` brings the container back --
+# the only recovery that has actually worked for this bug.
+restart_watchdog() {
+  local cur_file="" seen_offset=0 stop_seen_at=0
+
+  while sleep 5; do
+    kill -0 "$TORCH_PID" 2>/dev/null || return 0
+
+    local latest_log
+    latest_log=$(ls -t "${TORCH_DIR}"/Logs/Torch-*.log 2>/dev/null | head -1)
+    [ -z "$latest_log" ] && continue
+
+    if [ "$latest_log" != "$cur_file" ]; then
+      [ "$stop_seen_at" != 0 ] && log "watchdog: reload confirmed (new session log ${latest_log##*/})"
+      cur_file="$latest_log"
+      seen_offset=0
+      stop_seen_at=0
+    fi
+
+    local size
+    size=$(stat -c %s "$cur_file" 2>/dev/null) || continue
+    if [ "$size" -gt "$seen_offset" ]; then
+      local new_bytes
+      new_bytes=$(tail -c "+$((seen_offset + 1))" "$cur_file")
+      seen_offset="$size"
+
+      if [ "$stop_seen_at" = 0 ] && printf '%s' "$new_bytes" | grep -q "Torch: Stopping server\."; then
+        stop_seen_at=$(date +%s)
+        log "watchdog: stop/restart detected, expecting reload within ${STOP_HANG_TIMEOUT}s"
+      elif [ "$stop_seen_at" != 0 ] && printf '%s' "$new_bytes" | grep -q "Registering command"; then
+        log "watchdog: reload confirmed"
+        stop_seen_at=0
+      fi
+    fi
+
+    if [ "$stop_seen_at" != 0 ] && [ $(( $(date +%s) - stop_seen_at )) -ge "$STOP_HANG_TIMEOUT" ]; then
+      log "FATAL: watchdog: Torch did not reload within ${STOP_HANG_TIMEOUT}s of stopping -- forcing recovery"
+      runuser -u wine -- pkill -9 -f 'Torch\.Server\.exe' 2>/dev/null || true
+      runuser -u wine -- pkill -9 winedbg 2>/dev/null || true
+      runuser -u wine -- wineserver -k 2>/dev/null &
+      sleep 3
+      kill -KILL "$TORCH_PID" 2>/dev/null || true
+      return 0
+    fi
+  done
+}
+restart_watchdog &
+WATCHDOG_PID=$!
+
 shutdown() {
   log "signal received, stopping Torch"
+  kill "$WATCHDOG_PID" 2>/dev/null || true
   runuser -u wine -- wineserver -k 2>/dev/null || true
   kill -TERM "$TORCH_PID" 2>/dev/null || true
 }

@@ -92,9 +92,17 @@ No build system, linter, or unit tests. The two `tools/` scripts are the test su
   Verified in production: a `Good.bot` scheduled restart unloaded the torch session, autosaved
   successfully, and reloaded, while the container stayed up with `RestartCount: 0` across a 12h+
   uptime. So `SE_UPDATE_ON_BOOT` does not re-run on these, and there is no container churn.
-- **Restarting Torch from its own GUI is still a separate matter** — the predecessor's README reports
-  it kills the window manager without recovering, and that has not been retested here. Restart the
-  container for that case.
+- **Stopping/restarting Torch from its own GUI can hang forever.** Retested here: the predecessor's
+  "kills the window manager" theory is wrong — `openbox`, `Xvfb`, `x11vnc`, and `wineserver` all stay
+  alive. It's Torch itself: `Torch: Stopping server.` / `Failed to wait for the game to be stopped.`
+  / `Server stopped.` / session unload and autosave all complete normally, then the reload that's
+  supposed to follow (fresh `Registering command` lines) never happens — no thread crashes or spins,
+  every thread just parks. This is a long-standing unfixed upstream bug
+  (https://github.com/TorchAPI/Torch/issues/313, open since 2019, closed unresolved in 2022), not
+  specific to Wine or this container. `entrypoint.sh`'s `restart_watchdog` watches for exactly this
+  (`Torch: Stopping server.` with no `Registering command` within `STOP_HANG_TIMEOUT`, default 90s)
+  and force-kills the Torch process tree so `restart: unless-stopped` recovers the container — the
+  only recovery that has actually worked. It cannot fix the hang itself, only detect and recover.
 - **A crashed Torch parks in WineDbg and holds the prefix open.** Any `wineserver -w` (which
   winetricks runs) then blocks forever, which looks exactly like a hang. Kill `winedbg` first.
 - **Port 27016 is UDP only.** TCP needs an explicit mapping.

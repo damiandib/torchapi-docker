@@ -8,9 +8,6 @@ services:
     image: torchapi:wine11
     container_name: torchapi
     restart: unless-stopped
-    # TEMPORARY for hang debugging (gdb needs ptrace) -- remove once root cause is found.
-    cap_add:
-      - SYS_PTRACE
     volumes:
       - ./torch-server:/app/torch-server
     ports:

@@ -106,8 +106,12 @@ sudo docker compose up -d --build
   unloads and reloads the torch session with an autosave, leaving the container running — verified in
   production across a 12h+ uptime with `RestartCount: 0`. `SE_UPDATE_ON_BOOT` therefore does not run
   on those; it only runs when the container itself boots.
-- **Restarting Torch from inside its own GUI is a different case** and is reported not to recover
-  cleanly — the window manager goes with it. Restart the container for that. Edit server and instance
+- **Stopping/restarting Torch from inside its own GUI can hang forever**, with no crash and nothing
+  spinning a CPU core — Torch just never reloads a session after unloading the old one. This is a
+  long-standing unfixed upstream Torch bug
+  ([TorchAPI/Torch#313](https://github.com/TorchAPI/Torch/issues/313)), not something in this
+  container. `entrypoint.sh` runs a watchdog that detects the stall and force-restarts the container
+  automatically (see `STOP_HANG_TIMEOUT`); no manual intervention needed. Edit server and instance
   configs while stopped, not live.
 - **Torch's own updater is bypassed.** Left to itself, Torch unpacks a Windows steamcmd into
   `./torch-server/steam/steamcmd/` and runs it under Wine, where it cannot install app 298740. We use
