@@ -69,6 +69,17 @@ No build system, linter, or unit tests. The two `tools/` scripts are the test su
   +@sSteamCmdForcePlatformType windows +app_update 298740` — the `ForcePlatformType windows` part is
   essential, since Wine needs the Windows build — and refuses to launch Torch if
   `DedicatedServer64/steam_api64.dll` is still absent afterwards.
+- **Delete `steamapps/appmanifest_298740.acf` before every SE update, not just on first install.**
+  steamcmd's own state dir (`~/Steam`: appinfo/depot cache, session tickets) is not persisted, only
+  `/app/torch-server` is — so every boot starts cold. A cold `app_update` against an *existing*
+  appmanifest always goes through a `Reconfiguring` step that re-requests the manifest ID already
+  recorded as installed, and once a newer build supersedes that ID, Valve denies re-issuing its
+  manifest request code (`content_log.txt`: `Failed to get manifest request code, 'Access Denied'`,
+  same manifest ID every attempt — confirmed not transient: retries, `validate`, and dropping
+  `ForcePlatformType` from the update call were all tried and none of them stopped it). Deleting the
+  manifest file first forces steamcmd to redetect state fresh, the same path the first-ever install
+  already uses successfully. The entrypoint retries 3x with a 10s backoff as a safety net for
+  genuinely transient CDN errors on top of this.
 
 ## Layer ordering
 
