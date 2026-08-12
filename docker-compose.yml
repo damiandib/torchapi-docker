@@ -8,6 +8,9 @@ services:
     image: torchapi:wine11
     container_name: torchapi
     restart: unless-stopped
+    # TEMPORARY for hang debugging (gdb needs ptrace) -- remove once root cause is found.
+    cap_add:
+      - SYS_PTRACE
     volumes:
       - ./torch-server:/app/torch-server
     ports:
@@ -16,7 +19,7 @@ services:
       # - "27016:27016/tcp"
       - "5900:5900"
     environment:
-      - WINEDEBUG=-all
+      - WINEDEBUG=${WINEDEBUG:--all}
       # Consumed by Torch/instance layout under /app/torch-server, not by this repo's scripts.
       - INSTANCE_NAME=TORCHAPI
       # Unset means a random password is generated and printed to the container log on boot.
